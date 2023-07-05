@@ -13,11 +13,9 @@ http://labjack.com/support/u6/users-guide/5.2
 import collections
 import sys
 import warnings
+import asyncio
 
-try:
-    import ConfigParser
-except ImportError:  # Python 3
-    import configparser as ConfigParser
+import configparser as ConfigParser
 
 from struct import pack, unpack
 
@@ -213,9 +211,9 @@ class U6(Device):
         self.debug = debug
 
         if autoOpen:
-            self.open(**kargs)
+            asyncio.run(self.open(**kargs))
 
-    def open(self, localId = None, firstFound = True, serial = None, devNumber = None, handleOnly = False, LJSocket = None):
+    async def open(self, localId = None, firstFound = True, serial = None, devNumber = None, handleOnly = False, LJSocket = None):
         """
         Name: U6.open(localId = None, firstFound = True, devNumber = None,
                       handleOnly = False, LJSocket = None)
@@ -230,9 +228,10 @@ class U6(Device):
         >>> myU6 = u6.U6(autoOpen = False)
         >>> myU6.open()
         """
-        Device.open(self, 6, firstFound = firstFound, serial = serial, localId = localId, devNumber = devNumber, handleOnly = handleOnly, LJSocket = LJSocket )
+        await Device.open(self, 6, firstFound = firstFound, serial = serial, localId = localId,
+                          devNumber = devNumber, handleOnly = handleOnly, LJSocket = LJSocket )
 
-    def configU6(self, LocalID = None):
+    async def configU6(self, LocalID = None):
         """
         Name: U6.configU6(LocalID = None)
         Args: LocalID, if set, will write the new value to U6
@@ -265,12 +264,12 @@ class U6(Device):
         #command[9-25] = Reserved 
 
         try:
-            result = self._writeRead(command, 38, [0xF8, 0x10, 0x08])
+            result = await self._writeRead(command, 38, [0xF8, 0x10, 0x08])
         except LabJackException:
             e = sys.exc_info()[1]
             if e.errorCode == 4:
                 print("NOTE: ConfigU6 returned an error of 4. This probably means you are using U6 with a *really old* firmware. Please upgrade your U6's firmware as soon as possible.")
-                result = self._writeRead(command, 38, [0xF8, 0x10, 0x08], checkBytes = False)
+                result = await self._writeRead(command, 38, [0xF8, 0x10, 0x08], checkBytes = False)
             else:
                 raise e
 
@@ -289,7 +288,7 @@ class U6(Device):
 
         return {'FirmwareVersion': self.firmwareVersion, 'BootloaderVersion': self.bootloaderVersion, 'HardwareVersion': self.hardwareVersion, 'SerialNumber': self.serialNumber, 'ProductID': self.productId, 'LocalID': self.localId, 'VersionInfo': self.versionInfo, 'DeviceName': self.deviceName}
 
-    def configIO(self, NumberTimersEnabled = None, EnableCounter1 = None, EnableCounter0 = None, TimerCounterPinOffset = None, EnableUART = None):
+    async def configIO(self, NumberTimersEnabled = None, EnableCounter1 = None, EnableCounter0 = None, TimerCounterPinOffset = None, EnableUART = None):
         """
         Name: U6.configIO(NumberTimersEnabled = None, EnableCounter1 = None,
                           EnableCounter0 = None, TimerCounterPinOffset = None)
@@ -344,11 +343,11 @@ class U6(Device):
             if EnableUART:
                 command[6] |= (1 << 5)
 
-        result = self._writeRead(command, 16, [0xf8, 0x05, 0x0B])
+        result = await self._writeRead(command, 16, [0xf8, 0x05, 0x0B])
 
         return { 'NumberTimersEnabled' : result[8], 'Counter0Enabled' : bool(result[9] & 1), 'Counter1Enabled' : bool( (result[9] >> 1) & 1), 'TimerCounterPinOffset' : result[10] }
 
-    def configTimerClock(self, TimerClockBase = None, TimerClockDivisor = None):
+    async def configTimerClock(self, TimerClockBase = None, TimerClockDivisor = None):
         """
         Name: U6.configTimerClock(TimerClockBase = None,
                                   TimerClockDivisor = None)
@@ -382,7 +381,7 @@ class U6(Device):
         if TimerClockDivisor is not None:
             command[9] = TimerClockDivisor
             
-        result = self._writeRead(command, 10, [0xF8, 0x2, 0x0A])
+        result = await self._writeRead(command, 10, [0xF8, 0x2, 0x0A])
         
         divisor = result[9]
         if divisor == 0:
@@ -407,7 +406,7 @@ class U6(Device):
                 self._buildFeedbackResults(rcvBuffer, cmd, results, i)
         return results
 
-    def getFeedback(self, *commandlist):
+    async def getFeedback(self, *commandlist):
         """
         Name: U6.getFeedback(commandlist)
         Args: the FeedbackCommands to run
@@ -447,7 +446,7 @@ class U6(Device):
         if readLen > MAX_USB_PACKET_LENGTH:
             raise LabJackException("ERROR: The feedback command you are attempting to send would yield a response that is greater than 64 bytes ( %s bytes ). Break your commands up into separate calls to getFeedback()." % readLen)
         
-        rcvBuffer = self._writeRead(sendBuffer, readLen, [], checkBytes = False, stream = False, checksum = True)
+        rcvBuffer = await self._writeRead(sendBuffer, readLen, [], checkBytes = False, stream = False, checksum = True)
         
         # Check the response for errors
         try:
@@ -467,7 +466,7 @@ class U6(Device):
         i = 9
         return self._buildFeedbackResults(rcvBuffer, commandlist, results, i)
 
-    def readMem(self, BlockNum, ReadCal=False):
+    async def readMem(self, BlockNum, ReadCal=False):
         """
         Name: U6.readMem(BlockNum, ReadCal=False)
         Args: BlockNum, which block to read
@@ -495,14 +494,14 @@ class U6(Device):
         command[6] = 0x00
         command[7] = BlockNum
         
-        result = self._writeRead(command, 40, [ 0xF8, 0x11, command[3] ])
+        result = await self._writeRead(command, 40, [ 0xF8, 0x11, command[3] ])
         
         return result[8:]
     
     def readCal(self, BlockNum):
         return self.readMem(BlockNum, ReadCal = True)
         
-    def writeMem(self, BlockNum, Data, WriteCal=False):
+    async def writeMem(self, BlockNum, Data, WriteCal=False):
         """
         Name: U6.writeMem(BlockNum, Data, WriteCal=False)
         Args: BlockNum, which block to write
@@ -534,12 +533,12 @@ class U6(Device):
         command[7] = BlockNum
         command[8:] = Data
         
-        self._writeRead(command, 8, [0xF8, 0x01, command[3]])
+        asyncio.run(self._writeRead(command, 8, [0xF8, 0x01, command[3]]))
 
     def writeCal(self, BlockNum, Data):
-        return self.writeMem(BlockNum, Data, WriteCal = True)
+        return asyncio.run(self.writeMem(BlockNum, Data, WriteCal = True))
         
-    def eraseMem(self, EraseCal=False):
+    async def eraseMem(self, EraseCal=False):
         """
         Name: U6.eraseMem(EraseCal=False)
         Args: EraseCal, set to True to erase the calibration memory.
@@ -576,10 +575,10 @@ class U6(Device):
             #command[4] = Checksum16 (LSB)
             #command[5] = Checksum16 (MSB)
         
-        self._writeRead(command, 8, [0xF8, 0x01, command[3]])
+        asyncio.run(self._writeRead(command, 8, [0xF8, 0x01, command[3]]))
 
-    def eraseCal(self):
-        return self.eraseMem(EraseCal=True)
+    async def eraseCal(self):
+        return asyncio.run(self.eraseMem(EraseCal=True))
 
     def streamConfig(self, NumChannels = 1, ResolutionIndex = 0, SamplesPerPacket = 25, SettlingFactor = 0, InternalStreamClockFrequency = 0, DivideClockBy256 = False, ScanInterval = 1, ChannelNumbers = [0], ChannelOptions = [0], ScanFrequency = None, SampleFrequency = None):
         """
@@ -1044,7 +1043,7 @@ class U6(Device):
 
         return {'AsynchBytes': result[8:], 'NumAsynchBytesInRXBuffer': result[7]}
 
-    def i2c(self, Address, I2CBytes, EnableClockStretching = False, NoStopWhenRestarting = False, ResetAtStart = False, SpeedAdjust = 0, SDAPinNum = 0, SCLPinNum = 1, NumI2CBytesToReceive = 0, AddressByte = None):
+    async def i2c(self, Address, I2CBytes, EnableClockStretching = False, NoStopWhenRestarting = False, ResetAtStart = False, SpeedAdjust = 0, SDAPinNum = 0, SCLPinNum = 1, NumI2CBytesToReceive = 0, AddressByte = None):
         """
         Name: U6.i2c(Address, I2CBytes,
                      EnableClockStretching = False, NoStopWhenRestarting = False,
@@ -1113,7 +1112,7 @@ class U6(Device):
             NumI2CBytesToReceive = NumI2CBytesToReceive + 1
             oddResponse = True
 
-        result = self._writeRead(command, (12 + NumI2CBytesToReceive), [0xF8, (3 + (NumI2CBytesToReceive/2)), 0x3B])
+        result = await self._writeRead(command, (12 + NumI2CBytesToReceive), [0xF8, (3 + (NumI2CBytesToReceive/2)), 0x3B])
 
         if NumI2CBytesToReceive != 0:
             if oddResponse:
@@ -1397,7 +1396,7 @@ class U6(Device):
         
         return int(max(bits, 0))
 
-    def softReset(self):
+    async def softReset(self):
         """
         Name: U6.softReset()
         Args: none
@@ -1409,13 +1408,13 @@ class U6(Device):
         command = [ 0x00, 0x99, 0x01, 0x00 ]
         command = setChecksum8(command, 4)
         
-        self.write(command, False, False)
-        results = self.read(4)
+        asyncio.run(self.write(command, False, False))
+        results = await self.read(4)
         
         if results[3] != 0:
             raise LowlevelErrorException(results[3], "The softReset command returned an error:\n    %s" % lowlevelErrorToString(results[3]))
 
-    def hardReset(self):
+    async def hardReset(self):
         """
         Name: U6.hardReset()
         Args: none
@@ -1427,15 +1426,15 @@ class U6(Device):
         command = [ 0x00, 0x99, 0x02, 0x00 ]
         command = setChecksum8(command, 4)
         
-        self.write(command, False, False)
-        results = self.read(4)
+        asyncio.run(self.write(command, False, False))
+        results = await self.read(4)
         
         if results[3] != 0:
             raise LowlevelErrorException(results[3], "The softHard command returned an error:\n    %s" % lowlevelErrorToString(results[3]))
             
         self.close()
 
-    def setLED(self, state):
+    async def setLED(self, state):
         """
         Name: U6.setLED(state)
         Args: state: 1 = On, 0 = Off
@@ -1445,9 +1444,9 @@ class U6(Device):
         >>> d.setLED(0)
         ... (LED turns off) ...
         """
-        self.getFeedback(LED(state))
+        asyncio.run(self.getFeedback(LED(state)))
 
-    def setDOState(self, ioNum, state = 1):
+    async def setDOState(self, ioNum, state = 1):
         """
         Name: U6.setDOState(ioNum, state = 1)
         Args: ioNum, which digital I/O to change
@@ -1464,9 +1463,9 @@ class U6(Device):
         >>> d = u6.U6()
         >>> d.setDOState(0, state = 1)
         """
-        self.getFeedback(BitDirWrite(ioNum, 1), BitStateWrite(ioNum, state))
+        asyncio.run(self.getFeedback(BitDirWrite(ioNum, 1), BitStateWrite(ioNum, state)))
 
-    def getDIState(self, ioNum):
+    async def getDIState(self, ioNum):
         """
         Name: U6.getDIState(ioNum)
         Args: ioNum, which digital I/O to read
@@ -1483,9 +1482,8 @@ class U6(Device):
         >>> print(d.getDIState(0))
         1
         """
-        return self.getFeedback(BitDirWrite(ioNum, 0), BitStateRead(ioNum))[1]
-
-    def getDIOState(self, ioNum):
+        return asyncio.run(self.getFeedback(BitDirWrite(ioNum, 0), BitStateRead(ioNum))[1])
+    async def getDIOState(self, ioNum):
         """
         Name: U6.getDIOState(ioNum)
         Args: ioNum, which digital I/O to read
@@ -1502,9 +1500,9 @@ class U6(Device):
         >>> print(d.getDIOState(0))
         1
         """
-        return self.getFeedback(BitStateRead(ioNum))[0]
+        return asyncio.run(self.getFeedback(BitStateRead(ioNum))[0])
 
-    def getTemperature(self):
+    async def getTemperature(self):
         """
         Name: U6.getTemperature()
         Args: none
@@ -1518,10 +1516,10 @@ class U6(Device):
             # Read the actual calibration constants if we haven't already.
             self.getCalibrationData()
         
-        result = self.getFeedback(AIN24AR(14))
+        result = await self.getFeedback(AIN24AR(14))
         return self.binaryToCalibratedAnalogTemperature(result[0]['AIN'])
 
-    def getAIN(self, positiveChannel, resolutionIndex=0, gainIndex=0, settlingFactor=0, differential=False):
+    async def getAIN(self, positiveChannel, resolutionIndex=0, gainIndex=0, settlingFactor=0, differential=False):
         """
         Name: U6.getAIN(positiveChannel, resolutionIndex = 0, gainIndex = 0,
                         settlingFactor = 0, differential = False)
@@ -1540,7 +1538,7 @@ class U6(Device):
         >>> myU6.getAIN(0)
         10.109889201523673
         """
-        result = self.getFeedback(AIN24AR(positiveChannel, resolutionIndex, gainIndex, settlingFactor, differential))
+        result = await self.getFeedback(AIN24AR(positiveChannel, resolutionIndex, gainIndex, settlingFactor, differential))
         
         return self.binaryToCalibratedAnalogVoltage(result[0]['GainIndex'], result[0]['AIN'], resolutionIndex = resolutionIndex)
 
