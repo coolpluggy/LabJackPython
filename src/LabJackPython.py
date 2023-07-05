@@ -13,6 +13,7 @@ A typical user should start with their device's module, such as u3.py.
 # It's built-in on 2.6; 2.5 requires an import.
 from __future__ import with_statement
 
+import asyncio
 import atexit  # For auto-closing devices
 import socket
 import ctypes  # import after socket or cygwin crashes "Aborted (core dump)"
@@ -208,7 +209,6 @@ class Device(object):
         self.streamPacketOffset = 0
         self._autoCloseSetup = False
         self.modbusPrependZeros = True
-        self.deviceLock = threading.Lock()
         self.deviceName = "LabJack"
         
 
@@ -286,7 +286,7 @@ class Device(object):
             else:
                 print(msg)
 
-    def write(self, writeBuffer, modbus = False, checksum = True):
+    async def write(self, writeBuffer, modbus = False, checksum = True):
         """write([writeBuffer], modbus = False)
 
         Writes the data contained in writeBuffer to the device.  writeBuffer must be a list of 
@@ -310,7 +310,7 @@ class Device(object):
         
         self._debugprint("Sent: " + hexWithoutQuotes(wb))
 
-    def read(self, numBytes, stream = False, modbus = False):
+    async def read(self, numBytes, stream = False, modbus = False):
         """read(numBytes, stream = False, modbus = False)
 
         Blocking read until a packet is received. Returns a list of
@@ -327,7 +327,7 @@ class Device(object):
             result = self._readFromUE9TCPHandle(numBytes, stream, modbus)
         else:
             if _os_name == 'posix':
-                result = self._readFromExodriver(numBytes, stream, modbus)
+                result = await self._readFromExodriver(numBytes, stream, modbus)
             elif _os_name == 'nt':
                 result = self._readFromUDDriver(numBytes, stream, modbus)
 
@@ -364,7 +364,7 @@ class Device(object):
         rcvDataBuff = unpack(packFormat, rcvString)
         return list(rcvDataBuff)
 
-    def _readFromExodriver(self, numBytes, stream, modbus):
+    async def _readFromExodriver(self, numBytes, stream, modbus):
         newA = (ctypes.c_byte*numBytes)()
         
         if stream:
@@ -525,16 +525,17 @@ class Device(object):
         self.writeRegister(6000+IOnum, value)
         return True
 
-    def _modbusWriteRead(self, request, numBytes):
-        with self.deviceLock:
-            self.write(request, modbus = True, checksum = False)
+    async def _modbusWriteRead(self, request, numBytes):
+        lock = asyncio.Lock()
+        async with lock:
+            asyncio.run(self.write(request, modbus = True, checksum = False))
             try:
-                result = self.read(numBytes, modbus = True)
+                result = await self.read(numBytes, modbus = True)
                 self._debugprint("Response: " + hexWithoutQuotes(result))
                 return result
             except LabJackException:
-                self.write(request, modbus = True, checksum = False)
-                result = self.read(numBytes, modbus = True)
+                asyncio.run(self.write(request, modbus = True, checksum = False))
+                result = await self.read(numBytes, modbus = True)
                 self._debugprint("Response: " + hexWithoutQuotes(result))
                 return result
 
@@ -554,19 +555,18 @@ class Device(object):
         elif results[6] != 0:
             raise LowlevelErrorException(results[6], "\nThe %s returned an error:\n    %s" % (self.deviceName , lowlevelErrorToString(results[6])) )
     
-    def _writeRead(self, command, readLen, commandBytes, checkBytes = True, stream=False, checksum = True):
+    async def _writeRead(self, command, readLen, commandBytes, checkBytes = True, stream=False, checksum = True):
     
-        # Acquire the device lock.
-        with self.deviceLock:
-            self.write(command, checksum = checksum)
+        lock = asyncio.Lock()
+        async with lock:
+            await self.write(command, checksum = checksum)
             
-            result = self.read(readLen, stream=False)
+            result = await self.read(readLen, stream=False)
             self._debugprint("Response: " + hexWithoutQuotes(result))
             if checkBytes:
                 self._checkCommandBytes(result, commandBytes)
                         
-            return result
-    
+            return result 
     
     def ping(self):
         try:
@@ -594,7 +594,7 @@ class Device(object):
             return False
         
 
-    def open(self, devType, Ethernet=False, firstFound = True, serial = None, localId = None, devNumber = None, ipAddress = None, handleOnly = False, LJSocket = None):
+    async def open(self, devType, Ethernet=False, firstFound = True, serial = None, localId = None, devNumber = None, ipAddress = None, handleOnly = False, LJSocket = None):
         """
         Device.open(devType, Ethernet=False, firstFound = True, serial = None, localId = None, devNumber = None, ipAddress = None, handleOnly = False, LJSocket = None)
         
@@ -624,7 +624,7 @@ class Device(object):
         elif LJSocket:
             d = openLabJack(devType, ct, handleOnly = handleOnly, LJSocket = LJSocket)
         elif firstFound:
-            d = openLabJack(devType, ct, firstFound = True, handleOnly = handleOnly, LJSocket = LJSocket)
+            d = await openLabJack(devType, ct, firstFound = True, handleOnly = handleOnly, LJSocket = LJSocket)
         else:
             raise LabJackException("You must use first found, or give a localId, devNumber, or IP Address")
         
@@ -1415,7 +1415,7 @@ def openLabJack(deviceType, connectionType, firstFound = True, pAddress = None, 
     else:
         return Device(handle, devType = deviceType)
 
-def _makeDeviceFromHandle(handle, deviceType):
+async def _makeDeviceFromHandle(handle, deviceType):
     """ A helper function to get set all the info about a device from a handle"""
     device = Device(handle, devType = deviceType)
     device.changed = dict()
@@ -1523,8 +1523,8 @@ def _makeDeviceFromHandle(handle, deviceType):
         command[2] = 0x0A
         command[3] = 0x08
         try:
-            device.write(command)
-            rcvDataBuff = device.read(38)
+            await device.write(command)
+            rcvDataBuff = await device.read(38)
         except LabJackException:
             e = sys.exc_info()[1]
             device.close()
