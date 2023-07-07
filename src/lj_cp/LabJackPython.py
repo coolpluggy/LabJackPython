@@ -24,7 +24,7 @@ import logging
 
 from struct import pack, unpack
 
-import Modbus
+from lj_cp import Modbus
 
 
 LABJACKPYTHON_VERSION = "2.1.0"

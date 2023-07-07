@@ -1,6 +1,6 @@
 """het lezen van een analoge input"""
 import asyncio
-import u6
+from lj_cp import u6
 import math
 
 myU6 = u6.U6()

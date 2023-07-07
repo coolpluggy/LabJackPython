@@ -1,9 +1,10 @@
 # Based on u6allio.c
 
 import sys
+import asyncio
 from datetime import datetime
 
-import u6
+from lj_cp import u6
 
 
 try:
@@ -22,7 +23,7 @@ latestAinValues = [0] * numChannels
 numIterations = 1000
 
 d = u6.U6()
-d.getCalibrationData()
+asyncio.run(d.getCalibrationData())
 
 try:
     # Configure the IOs before the test starts
@@ -31,7 +32,7 @@ try:
     fios = FIOEIOAnalog & 0xFF
     eios = FIOEIOAnalog // 256
 
-    d.getFeedback(u6.PortDirWrite(Direction=[0, 0, 0], WriteMask=[0, 0, 15]))
+    asyncio.run(d.getFeedback(u6.PortDirWrite(Direction=[0, 0, 0], WriteMask=[0, 0, 15])))
 
     feedbackArguments = []
 
@@ -45,7 +46,7 @@ try:
     # Call Feedback 1000 (default) times
     i = 0
     while i < numIterations:
-        results = d.getFeedback(feedbackArguments)
+        results = asyncio.run(d.getFeedback(feedbackArguments))
         for j in range(numChannels):
             latestAinValues[j] = d.binaryToCalibratedAnalogVoltage(gainIndex, results[2 + j])
         i += 1

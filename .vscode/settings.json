@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
-        "./lj_cp"
+        "./src",
+        "./src/lj_cp"
     ]
 }

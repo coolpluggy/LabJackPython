@@ -20,14 +20,11 @@ import collections
 import sys
 import warnings
 
-try:
-    import ConfigParser
-except ImportError: # Python 3
-    import configparser as ConfigParser
+import configparser as ConfigParser
 
 from struct import pack, unpack
 
-from LabJackPython import (
+from lj_cp.LabJackPython import (
     Device,
     deviceCount,
     LabJackException,

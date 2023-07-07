@@ -19,7 +19,7 @@ import configparser as ConfigParser
 
 from struct import pack, unpack
 
-from LabJackPython import (
+from lj_cp.LabJackPython import (
     Device,
     deviceCount,
     LabJackException,
@@ -1175,7 +1175,7 @@ class U6(Device):
 
     # --------------------------- Old U6 code -------------------------------
 
-    def _readCalDataBlock(self, n):
+    async def _readCalDataBlock(self, n):
         """
         Internal routine to read the specified calibration block (0-2)
         """
@@ -1185,11 +1185,11 @@ class U6(Device):
         sendBuffer[3] = 0x2D  #  extended command number
         sendBuffer[6] = 0x00
         sendBuffer[7] = n     # Blocknum = 0
-        self.write(sendBuffer)
-        buff = self.read(40)
+        await self.write(sendBuffer)
+        buff = await self.read(40)
         return buff[8:]
 
-    def getCalibrationData(self):
+    async def getCalibrationData(self):
         """
         Name: U6.getCalibrationData()
         Args: None
@@ -1206,7 +1206,7 @@ class U6(Device):
         self.calInfo.nominal = False
 
         # Reading block 0 from memory
-        rcvBuffer = self._readCalDataBlock(0)
+        rcvBuffer = await self._readCalDataBlock(0)
 
         # Positive Channel calibration
         self.calInfo.ain10vSlope = toDouble(rcvBuffer[:8])
@@ -1215,7 +1215,7 @@ class U6(Device):
         self.calInfo.ain1vOffset = toDouble(rcvBuffer[24:])
 
         # Reading block 1 from memory
-        rcvBuffer = self._readCalDataBlock(1)
+        rcvBuffer = await self._readCalDataBlock(1)
 
         self.calInfo.ain100mvSlope = toDouble(rcvBuffer[:8])
         self.calInfo.ain100mvOffset = toDouble(rcvBuffer[8:16])
@@ -1226,7 +1226,7 @@ class U6(Device):
         self.calInfo.ainOffset = [self.calInfo.ain10vOffset, self.calInfo.ain1vOffset, self.calInfo.ain100mvOffset, self.calInfo.ain10mvOffset]
 
         # Reading block 2 from memory
-        rcvBuffer = self._readCalDataBlock(2)
+        rcvBuffer = await self._readCalDataBlock(2)
 
         # Negative channel calibration
         self.calInfo.ain10vNegSlope = toDouble(rcvBuffer[:8])
@@ -1235,7 +1235,7 @@ class U6(Device):
         self.calInfo.ain1vCenter = toDouble(rcvBuffer[24:])
 
         # Reading block 3 from memory
-        rcvBuffer = self._readCalDataBlock(3)
+        rcvBuffer = await self._readCalDataBlock(3)
 
         self.calInfo.ain100mvNegSlope = toDouble(rcvBuffer[:8])
         self.calInfo.ain100mvCenter = toDouble(rcvBuffer[8:16])
@@ -1246,7 +1246,7 @@ class U6(Device):
         self.calInfo.ainCenter = [self.calInfo.ain10vCenter, self.calInfo.ain1vCenter, self.calInfo.ain100mvCenter, self.calInfo.ain10mvCenter]
 
         # Reading block 4 from memory
-        rcvBuffer = self._readCalDataBlock(4)
+        rcvBuffer = await self._readCalDataBlock(4)
 
         # Miscellaneous
         self.calInfo.dac0Slope = toDouble(rcvBuffer[:8])
@@ -1258,7 +1258,7 @@ class U6(Device):
         self.calInfo.dacOffset = [self.calInfo.dac0Offset, self.calInfo.dac1Offset]
 
         # Reading block 5 from memory
-        rcvBuffer = self._readCalDataBlock(5)
+        rcvBuffer = await self._readCalDataBlock(5)
 
         self.calInfo.currentOutput0 = toDouble(rcvBuffer[:8])
         self.calInfo.currentOutput1 = toDouble(rcvBuffer[8:16])
@@ -1270,7 +1270,7 @@ class U6(Device):
             # Hi-Res ADC stuff
 
             # Reading block 6 from memory
-            rcvBuffer = self._readCalDataBlock(6)
+            rcvBuffer = await self._readCalDataBlock(6)
 
             # Positive Channel calibration
             self.calInfo.proAin10vSlope = toDouble(rcvBuffer[:8])
@@ -1279,7 +1279,7 @@ class U6(Device):
             self.calInfo.proAin1vOffset = toDouble(rcvBuffer[24:])
 
             # Reading block 7 from memory
-            rcvBuffer = self._readCalDataBlock(7)
+            rcvBuffer = await self._readCalDataBlock(7)
 
             self.calInfo.proAin100mvSlope = toDouble(rcvBuffer[:8])
             self.calInfo.proAin100mvOffset = toDouble(rcvBuffer[8:16])
@@ -1290,7 +1290,7 @@ class U6(Device):
             self.calInfo.proAinOffset = [self.calInfo.proAin10vOffset, self.calInfo.proAin1vOffset, self.calInfo.proAin100mvOffset, self.calInfo.proAin10mvOffset]
 
             # Reading block 8 from memory
-            rcvBuffer = self._readCalDataBlock(8)
+            rcvBuffer = await self._readCalDataBlock(8)
 
             # Negative Channel calibration
             self.calInfo.proAin10vNegSlope = toDouble(rcvBuffer[:8])
@@ -1299,7 +1299,7 @@ class U6(Device):
             self.calInfo.proAin1vCenter = toDouble(rcvBuffer[24:])
 
             # Reading block 9 from memory
-            rcvBuffer = self._readCalDataBlock(9)
+            rcvBuffer = await self._readCalDataBlock(9)
 
             self.calInfo.proAin100mvNegSlope = toDouble(rcvBuffer[:8])
             self.calInfo.proAin100mvCenter = toDouble(rcvBuffer[8:16])
