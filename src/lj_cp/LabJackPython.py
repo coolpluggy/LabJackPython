@@ -62,7 +62,7 @@ class LabJackException(Exception):
         if not self.errorString:
             try:
                 pString = ctypes.create_string_buffer(256)
-                staticLib.ErrorToString(ctypes.c_long(self.errorCode), ctypes.byref(pString))
+                getstaticLib().ErrorToString(ctypes.c_long(self.errorCode), ctypes.byref(pString))
                 self.errorString = pString.value.decode("ascii").split("\0", 1)[0]
             except:
                 self.errorString = str(self.errorCode)
@@ -180,7 +180,6 @@ except LabJackException:
     print("%s: %s" % (type(e), e))
     staticLib = None
 
-
 class Device(object):
     """Device(handle, localId = None, serialNumber = None, ipAddress = "", devType = None)
             
@@ -239,14 +238,15 @@ class Device(object):
         
         return writeBuffer
 
-    def _writeToExodriver(self, writeBuffer, modbus):
+    async def _writeToExodriver(self, writeBuffer, modbus):
         if modbus is True and self.modbusPrependZeros:
             writeBuffer = [ 0, 0 ] + writeBuffer
         
         newA = (ctypes.c_byte*len(writeBuffer))(0) 
         for i in range(len(writeBuffer)):
             newA[i] = ctypes.c_byte(writeBuffer[i])
-        
+       
+        await asyncio.sleep(0)
         writeBytes = staticLib.LJUSB_Write(self.handle, ctypes.byref(newA), len(writeBuffer))
         
         if writeBytes != len(writeBuffer):
@@ -304,9 +304,9 @@ class Device(object):
             wb = self._writeToUE9TCPHandle(writeBuffer, modbus)
         else:
             if _os_name == 'posix':
-                wb = self._writeToExodriver(writeBuffer, modbus)
+                wb = await self._writeToExodriver(writeBuffer, modbus)
             elif _os_name == 'nt':
-                wb = self._writeToUDDriver(writeBuffer, modbus)
+                wb = await self._writeToUDDriver(writeBuffer, modbus)
         
         self._debugprint("Sent: " + hexWithoutQuotes(wb))
 
@@ -614,15 +614,15 @@ class Device(object):
         
         d = None
         if devNumber:
-            d = openLabJack(devType, ct, firstFound = False, devNumber = devNumber, handleOnly = handleOnly, LJSocket = LJSocket)
+            d = await openLabJack(devType, ct, firstFound = False, devNumber = devNumber, handleOnly = handleOnly, LJSocket = LJSocket)
         elif serial:
-            d = openLabJack(devType, ct, firstFound = False, pAddress = serial, handleOnly = handleOnly, LJSocket = LJSocket)
+            d = await openLabJack(devType, ct, firstFound = False, pAddress = serial, handleOnly = handleOnly, LJSocket = LJSocket)
         elif localId:
-            d = openLabJack(devType, ct, firstFound = False, pAddress = localId, handleOnly = handleOnly, LJSocket = LJSocket)
+            d = await openLabJack(devType, ct, firstFound = False, pAddress = localId, handleOnly = handleOnly, LJSocket = LJSocket)
         elif ipAddress:
-            d = openLabJack(devType, ct, firstFound = False, pAddress = ipAddress, handleOnly = handleOnly, LJSocket = LJSocket)
+            d = await openLabJack(devType, ct, firstFound = False, pAddress = ipAddress, handleOnly = handleOnly, LJSocket = LJSocket)
         elif LJSocket:
-            d = openLabJack(devType, ct, handleOnly = handleOnly, LJSocket = LJSocket)
+            d = await openLabJack(devType, ct, handleOnly = handleOnly, LJSocket = LJSocket)
         elif firstFound:
             d = await openLabJack(devType, ct, firstFound = True, handleOnly = handleOnly, LJSocket = LJSocket)
         else:
@@ -672,7 +672,7 @@ class Device(object):
 
         self.handle = None
 
-    def reset(self):
+    async def reset(self):
         """
         Reset the LabJack device.
 
@@ -1052,7 +1052,7 @@ def verifyChecksum(buffer):
     return False
 
 # 1 = LJ_ctUSB
-def listAll(deviceType, connectionType = 1):
+async def listAll(deviceType, connectionType = 1):
     """listAll(deviceType, connectionType) -> [[local ID, Serial Number, IP Address], ...]
 
     Searches for all devices of a given type over a given connection
@@ -1156,13 +1156,13 @@ def listAll(deviceType, connectionType = 1):
         if deviceType == 6:
             return __listAllU6Unix()
 
-def isHandleValid(handle):
+async def isHandleValid(handle):
     if _os_name == 'nt':
         return True
     else:
         return staticLib.LJUSB_IsHandleValid(handle)
 
-def deviceCount(devType = None):
+async def deviceCount(devType = None):
     """Returns the number of devices connected."""
     if _os_name == 'nt':
         if devType is None:
@@ -1181,7 +1181,7 @@ def deviceCount(devType = None):
         else:
             return staticLib.LJUSB_GetDevCount(devType)
 
-def getDevCounts():
+async def getDevCounts():
     if _os_name == "nt":
         # Right now there is no good way to count all the U12s on a Windows box
         returnDict = {3: len(listAll(3)), 6: len(listAll(6)), 9: len(listAll(9)), 1: 0}
@@ -1199,7 +1199,7 @@ def getDevCounts():
 
         return returnDict
 
-def openAllLabJacks():
+async def openAllLabJacks():
     if _os_name == "nt":
         # Windows doesn't provide a nice way to open all the devices.
         devs = dict()
@@ -1211,7 +1211,7 @@ def openAllLabJacks():
             for i, serial in enumerate(numConnected.keys()):
                 d = Device(None, devType = prodId)
                 d.open(prodId, serial = serial)
-                d = _makeDeviceFromHandle(d.handle, prodId)
+                d = await _makeDeviceFromHandle(d.handle, prodId)
                 devices.append(d)
     else:
         maxHandles = 10
@@ -1222,7 +1222,7 @@ def openAllLabJacks():
 
         devices = list()
         for i in range(numOpened):
-            devices.append(_makeDeviceFromHandle(devHandles[i], int(devIds[i])))
+            devices.append(await _makeDeviceFromHandle(devHandles[i], int(devIds[i])))
 
     return devices
 
@@ -1236,7 +1236,7 @@ def _openLabJackUsingLJSocket(deviceType, firstFound, pAddress, LJSocket, handle
 
     return handle
 
-def _openLabJackUsingUDDriver(deviceType, connectionType, firstFound, pAddress, devNumber):
+async def _openLabJackUsingUDDriver(deviceType, connectionType, firstFound, pAddress, devNumber):
     if devNumber is not None:
         devs = listAll(deviceType)
         pAddress = list(devs.keys())[devNumber-1]
@@ -1268,7 +1268,7 @@ def _isOpenAccessError():
     else:
         return False
 
-def _openLabJackUsingExodriver(deviceType, firstFound, pAddress, devNumber):
+async def _openLabJackUsingExodriver(deviceType, firstFound, pAddress, devNumber):
     devType = ctypes.c_ulong(deviceType)
     openDev = staticLib.LJUSB_OpenDevice
     openDev.restype = ctypes.c_void_p
@@ -1302,7 +1302,7 @@ def _openLabJackUsingExodriver(deviceType, firstFound, pAddress, devNumber):
                     if _isOpenAccessError():
                         noAccessDetected = True
                     raise NullHandleException()
-                device = _makeDeviceFromHandle(handle, deviceType)
+                device = await _makeDeviceFromHandle(handle, deviceType)
             except:
                 continue
 
@@ -1389,7 +1389,7 @@ def _openUE9OverEthernet(firstFound, pAddress, devNumber):
         raise LabJackException("LJE_LABJACK_NOT_FOUND: Couldn't find the specified LabJack.")
 
 #Windows, Linux, and Mac
-def openLabJack(deviceType, connectionType, firstFound = True, pAddress = None, devNumber = None, handleOnly = False, LJSocket = None):
+async def openLabJack(deviceType, connectionType, firstFound = True, pAddress = None, devNumber = None, handleOnly = False, LJSocket = None):
     """openLabJack(deviceType, connectionType, firstFound = True, pAddress = 1, LJSocket = None)
 
     Note: On Windows, UE9 over Ethernet, pAddress MUST be the IP address. 
@@ -1401,7 +1401,7 @@ def openLabJack(deviceType, connectionType, firstFound = True, pAddress = None, 
         handle = _openLabJackUsingLJSocket(deviceType, firstFound, pAddress, LJSocket, handleOnly)
     elif _os_name == 'posix' and connectionType == LJ_ctUSB:
         # Using Exodriver on Linux/Mac for USB connections.
-        handle = _openLabJackUsingExodriver(deviceType, firstFound, pAddress, devNumber)
+        handle = await _openLabJackUsingExodriver(deviceType, firstFound, pAddress, devNumber)
         if isinstance(handle, Device):
             return handle
     elif _os_name == 'nt':
@@ -1411,7 +1411,7 @@ def openLabJack(deviceType, connectionType, firstFound = True, pAddress = None, 
         handle = _openUE9OverEthernet(firstFound, pAddress, devNumber)
 
     if not handleOnly:
-        return _makeDeviceFromHandle(handle, deviceType)
+        return await _makeDeviceFromHandle(handle, deviceType)
     else:
         return Device(handle, devType = deviceType)
 
@@ -1558,7 +1558,7 @@ async def _makeDeviceFromHandle(handle, deviceType):
     return device
 
 #Windows
-def AddRequest(Handle, IOType, Channel, Value, x1, UserData):
+async def AddRequest(Handle, IOType, Channel, Value, x1, UserData):
     """AddRequest(handle, ioType, channel, value, x1, userData)
         
     Windows Only
@@ -1574,7 +1574,7 @@ def AddRequest(Handle, IOType, Channel, Value, x1, UserData):
 
 
 #Windows
-def AddRequestS(Handle, pIOType, Channel, Value, x1, UserData):
+async def AddRequestS(Handle, pIOType, Channel, Value, x1, UserData):
     """Add a request to the LabJackUD request stack
     
     For Windows
@@ -1617,7 +1617,7 @@ def AddRequestS(Handle, pIOType, Channel, Value, x1, UserData):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def AddRequestSS(Handle, pIOType, pChannel, Value, x1, UserData):
+async def AddRequestSS(Handle, pIOType, pChannel, Value, x1, UserData):
     """Add a request to the LabJackUD request stack
     
     For Windows
@@ -1660,7 +1660,7 @@ def AddRequestSS(Handle, pIOType, pChannel, Value, x1, UserData):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def Go():
+async def Go():
     """Complete all requests currently on the LabJackUD request stack
 
     For Windows Only
@@ -1688,7 +1688,7 @@ def Go():
        raise LabJackException("Function only supported for Windows")
 
 #Windows
-def GoOne(Handle):
+async def GoOne(Handle):
     """Performs the next request on the LabJackUD request stack
     
     For Windows Only
@@ -1718,7 +1718,7 @@ def GoOne(Handle):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def eGet(Handle, IOType, Channel, pValue, x1):
+async def eGet(Handle, IOType, Channel, pValue, x1):
     """Perform one call to the LabJack Device
     
     eGet is equivilent to an AddRequest followed by a GoOne.
@@ -1764,7 +1764,7 @@ def eGet(Handle, IOType, Channel, pValue, x1):
 
 #Windows
 #Raw method -- Used because x1 is an output
-def eGetRaw(Handle, IOType, Channel, pValue, x1):
+async def eGetRaw(Handle, IOType, Channel, pValue, x1):
     """Perform one call to the LabJack Device as a raw command
     
     eGetRaw is equivilent to an AddRequest followed by a GoOne.
@@ -1856,7 +1856,7 @@ def eGetRaw(Handle, IOType, Channel, pValue, x1):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def eGetS(Handle, pIOType, Channel, pValue, x1):
+async def eGetS(Handle, pIOType, Channel, pValue, x1):
     """Perform one call to the LabJack Device
     
     eGet is equivilent to an AddRequest followed by a GoOne.
@@ -1895,7 +1895,7 @@ def eGetS(Handle, pIOType, Channel, pValue, x1):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def eGetSS(Handle, pIOType, pChannel, pValue, x1):
+async def eGetSS(Handle, pIOType, pChannel, pValue, x1):
     """Perform one call to the LabJack Device
     
     eGet is equivilent to an AddRequest followed by a GoOne.
@@ -1944,7 +1944,7 @@ def eGetRawS(Handle, pIOType, Channel, pValue, x1):
     pass
 
 #Windows
-def ePut(Handle, IOType, Channel, Value, x1):
+async def ePut(Handle, IOType, Channel, Value, x1):
     """Put one value to the LabJack device
     
     ePut is equivilent to an AddRequest followed by a GoOne.
@@ -1985,7 +1985,7 @@ def ePut(Handle, IOType, Channel, Value, x1):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def ePutS(Handle, pIOType, Channel, Value, x1):
+async def ePutS(Handle, pIOType, Channel, Value, x1):
     """Put one value to the LabJack device
     
     ePut is equivilent to an AddRequest followed by a GoOne.
@@ -2026,7 +2026,7 @@ def ePutS(Handle, pIOType, Channel, Value, x1):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def ePutSS(Handle, pIOType, pChannel, Value, x1):
+async def ePutSS(Handle, pIOType, pChannel, Value, x1):
     """Put one value to the LabJack device
     
     ePut is equivilent to an AddRequest followed by a GoOne.
@@ -2067,7 +2067,7 @@ def ePutSS(Handle, pIOType, pChannel, Value, x1):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def GetResult(Handle, IOType, Channel):
+async def GetResult(Handle, IOType, Channel):
     """Put one value to the LabJack device
     
     ePut is equivilent to an AddRequest followed by a GoOne.
@@ -2106,7 +2106,7 @@ def GetResult(Handle, IOType, Channel):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def GetResultS(Handle, pIOType, Channel):
+async def GetResultS(Handle, pIOType, Channel):
     """Put one value to the LabJack device
     
     ePut is equivilent to an AddRequest followed by a GoOne.
@@ -2145,7 +2145,7 @@ def GetResultS(Handle, pIOType, Channel):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def GetResultSS(Handle, pIOType, pChannel):
+async def GetResultSS(Handle, pIOType, pChannel):
     """Put one value to the LabJack device
     
     ePut is equivilent to an AddRequest followed by a GoOne.
@@ -2184,7 +2184,7 @@ def GetResultSS(Handle, pIOType, pChannel):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def GetFirstResult(Handle):
+async def GetFirstResult(Handle):
     """List All LabJack devices of a specific type over a specific connection type.
 
     For Windows only.
@@ -2231,7 +2231,7 @@ def GetFirstResult(Handle):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def GetNextResult(Handle):
+async def GetNextResult(Handle):
     """List All LabJack devices of a specific type over a specific connection type.
 
     For Windows only.
@@ -2329,7 +2329,7 @@ def StringToDoubleAddress(pString):
     return value
 
 #Windows
-def StringToConstant(pString):
+async def StringToConstant(pString):
     """Converts an LabJackUD valid string to its constant value.
 
     For Windows
@@ -2352,7 +2352,7 @@ def StringToConstant(pString):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def eAIN(Handle, ChannelP, ChannelN=199, Range=0, Resolution=0, Settling=0, Binary=False):
+async def eAIN(Handle, ChannelP, ChannelN=199, Range=0, Resolution=0, Settling=0, Binary=False):
     """An easy function that returns a reading from one analog input.
         
     Windows Only
@@ -2399,7 +2399,7 @@ def eAIN(Handle, ChannelP, ChannelN=199, Range=0, Resolution=0, Settling=0, Bina
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def eDAC(Handle, Channel, Voltage, Binary=False):
+async def eDAC(Handle, Channel, Voltage, Binary=False):
     """An easy function that writes a value to one analog output.
         
     Windows Only
@@ -2437,7 +2437,7 @@ def eDAC(Handle, Channel, Voltage, Binary=False):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def eDI(Handle, Channel):
+async def eDI(Handle, Channel):
     """An easy function that reads the state of one digital input.
         
     Windows Only
@@ -2468,7 +2468,7 @@ def eDI(Handle, Channel):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows
-def eDO(Handle, Channel, State):
+async def eDO(Handle, Channel, State):
     """An easy function that writes the state of one digital output.
         
     Windows Only
@@ -2506,7 +2506,7 @@ def _convertListToCtypeArray(li, cType):
     return (cType*len(li))(*li)
 
 #Windows
-def eTCConfig(Handle, aEnableTimers, aEnableCounters, TCPinOffset, TimerClockBaseIndex, TimerClockDivisor, aTimerModes, aTimerValues):
+async def eTCConfig(Handle, aEnableTimers, aEnableCounters, TCPinOffset, TimerClockBaseIndex, TimerClockDivisor, aTimerModes, aTimerValues):
     """An easy function that configures and initializes all the timers and counters.
         
     Windows Only
@@ -2580,7 +2580,7 @@ def _convertCtypeArrayToList(listCtype):
     return listCtype[:]
 
 #Windows
-def eTCValues(Handle, aReadTimers, aUpdateResetTimers, aReadCounters, aResetCounters, aTimerValues):
+async def eTCValues(Handle, aReadTimers, aUpdateResetTimers, aReadCounters, aResetCounters, aTimerValues):
     """An easy function that updates and reads all the timers and counters. 
         
     Windows Only
@@ -2721,7 +2721,7 @@ def lowlevelErrorToString(errorcode):
     return msg
 
 #Windows
-def ErrorToString(ErrorCode):
+async def ErrorToString(ErrorCode):
     """Converts an LabJackUD valid error code to a String.
 
     For Windows
@@ -2745,7 +2745,7 @@ def ErrorToString(ErrorCode):
        raise LabJackException(0, "Function only supported for Windows")
 
 #Windows, Linux, and Mac
-def GetDriverVersion():
+async def GetDriverVersion():
     """Gets the version of the UD driver on Windows or the Exodriver on
     Linux/Mac.
 
@@ -2760,15 +2760,17 @@ def GetDriverVersion():
     @return: Driver version number as a String.
     """
     if _os_name == 'nt':
+        staticLib = staticLib
         staticLib.GetDriverVersion.restype = ctypes.c_double
         return "%.4f" % staticLib.GetDriverVersion()
         
     elif _os_name == 'posix':
+        staticLib = staticLib
         staticLib.LJUSB_GetLibraryVersion.restype = ctypes.c_float
         return "%.4f" % staticLib.LJUSB_GetLibraryVersion()
 
 #Windows
-def TCVoltsToTemp(TCType, TCVolts, CJTempK):
+async def TCVoltsToTemp(TCType, TCVolts, CJTempK):
     """Converts a thermo couple voltage reading to an appropriate temperature reading.
 
     For Windows
@@ -2803,7 +2805,7 @@ def TCVoltsToTemp(TCType, TCVolts, CJTempK):
 
 
 #Windows 
-def Close():
+async def Close():
     """Resets the driver and closes all open handles.
 
     For Windows
@@ -2860,7 +2862,7 @@ def U12DriverPresent():
 
 
 #Windows only
-def LJHash(hashStr, size):
+async def LJHash(hashStr, size):
     """An approximation of the md5 hashing algorithms.  
 
     For Windows
@@ -2892,7 +2894,7 @@ def LJHash(hashStr, size):
         
     return retBuff
 
-def __listAllUE9Unix(connectionType):
+async def __listAllUE9Unix(connectionType):
     """Private listAll function for use on unix and mac machines to find UE9s.
     """
 
@@ -2965,7 +2967,7 @@ def __listAllUE9Unix(connectionType):
 
 
 
-def __listAllU3Unix():
+async def __listAllU3Unix():
     """Private listAll function for unix and mac machines.  Works on the U3 only.
     """
     deviceList = {}
@@ -2984,7 +2986,7 @@ def __listAllU3Unix():
     return deviceList
 
 
-def __listAllU6Unix():
+async def __listAllU6Unix():
     """ List all for U6s """
     deviceList = {}
     numDevices = staticLib.LJUSB_GetDevCount(LJ_dtU6)

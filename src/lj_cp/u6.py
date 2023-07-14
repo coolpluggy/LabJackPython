@@ -211,7 +211,8 @@ class U6(Device):
         self.debug = debug
 
         if autoOpen:
-            asyncio.run(self.open(**kargs))
+            print('autoOpen is not implemented anymore. Use myU6 = u6.U6(autoOpen = False) and myU6.open()')
+            # self.open(**kargs)
 
     async def open(self, localId = None, firstFound = True, serial = None, devNumber = None, handleOnly = False, LJSocket = None):
         """
