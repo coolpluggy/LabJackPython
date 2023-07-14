@@ -62,7 +62,7 @@ class LabJackException(Exception):
         if not self.errorString:
             try:
                 pString = ctypes.create_string_buffer(256)
-                getstaticLib().ErrorToString(ctypes.c_long(self.errorCode), ctypes.byref(pString))
+                staticLib.ErrorToString(ctypes.c_long(self.errorCode), ctypes.byref(pString))
                 self.errorString = pString.value.decode("ascii").split("\0", 1)[0]
             except:
                 self.errorString = str(self.errorCode)
